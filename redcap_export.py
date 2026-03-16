@@ -19,14 +19,12 @@ Options:
 	--format csv|xml		Output format (default: csv)
 	--labels raw|label		Export raw values or human-readable labels (default: raw)
 	--gzip					Compress output using gzip
-	--engine stream|mysql	Choose export engine (default: stream)
 	--progress-interval N	Print progress every N records processed
 
 Examples:
 	./redcap_export.py 123
 	./redcap_export.py 123 --labels label --gzip
 	./redcap_export.py 123 --format xml --progress-interval 2000
-	./redcap_export.py 123 --engine mysql
 
 Author:
 	Swaroop Samek
@@ -114,7 +112,6 @@ parser.add_argument("pid", type=int, help="REDCap project_id")
 parser.add_argument("--format", choices=["csv", "xml"], default="csv", help="output format")
 parser.add_argument("--labels", choices=["raw", "label"], default="raw", help="export raw codes or labels")
 parser.add_argument("--gzip", action="store_true", help="gzip compress the output file")
-parser.add_argument("--engine", choices=["stream","mysql"], default="stream", help="export engine")
 parser.add_argument("--progress-interval", type=int, default=2000, help="update progress every N rows processed")
 args = parser.parse_args()
 
@@ -122,7 +119,6 @@ pid = args.pid
 OUT_FORMAT = args.format
 LABEL_MODE = args.labels
 USE_GZIP = args.gzip
-ENGINE = args.engine
 PROGRESS_INTERVAL = max(1, args.progress_interval)
 
 label_mode_str = "raw_data" if LABEL_MODE == "raw" else "labeled_data"
@@ -222,7 +218,6 @@ print("Project records: %s" % format(records_total, ","))
 print("Instruments: %s" % len(set(field_to_form.values())))
 print("Fields: %s" % len(metadata))
 print("Checkbox fields: %s" % len(checkbox_choices))
-print("Engine:", ENGINE)
 print("Output file:", outfile)
 print("Format:", OUT_FORMAT, "| Labels:", LABEL_MODE, "| Gzip:", USE_GZIP)
 print("Starting streaming export... (this may take minutes for large projects)")
@@ -296,59 +291,6 @@ if OUT_FORMAT == "csv":
 else:
 	fout = open_f(outfile, "w")
 	fout.write('<?xml version="1.0" encoding="UTF-8" ?>\n<records>\n')
-
-# ---------------------------
-# MySQL pivot engine branch (ADDED) - leave core streaming code untouched below
-# ---------------------------
-if ENGINE == "mysql":
-	# Build a flattened select: record, plus MAX(CASE WHEN field_name=... THEN value END) AS `field`
-	select_fields = []
-	for f in metadata:
-		select_fields.append("MAX(CASE WHEN field_name='%s' THEN value END) AS `%s`" % (f, f))
-	pivot_q = """
-	SELECT record,%s
-	FROM %s
-	WHERE project_id=%d
-	GROUP BY record
-	""" % (",".join(select_fields), data_table, pid)
-
-	proc = mysql_stream_proc(pivot_q)
-
-	# Write header was already done above. Now write rows directly.
-	for line in proc.stdout:
-		parts = line.rstrip("\n").split("\t")
-		# parts[0] is record, rest correspond to metadata fields in order
-		if OUT_FORMAT == "csv":
-			# write full row: record followed by flattened values (metadata order)
-			csv_writer.writerow(parts)
-		else:
-			# buffered xml write for the flattened row
-			record = parts[0] if len(parts) > 0 else ""
-			values = parts[1:]
-			xml_lines = ["\t<item>"]
-			# system cols: record id (record_id_field) and then expanded fields (we'll output metadata order)
-			# write record id system field first
-			xml_lines.append("\t<%s><![CDATA[%s]]></%s>" % (record_id_field, record, record_id_field))
-			# write the rest in metadata order
-			for fname, val in zip(metadata, values):
-				xml_lines.append("\t<%s><![CDATA[%s]]></%s>" % (fname, val, fname))
-			xml_lines.append("\t</item>")
-			fout.write("\n".join(xml_lines))
-	proc.wait()
-	# close and finish
-	if OUT_FORMAT == "xml":
-		fout.write("</records>\n")
-	fout.close()
-	print_progress(rows_total, rows_total, start_time, time.time(), rows_total)
-	print("\n\nExport complete")
-	print("Output file:", outfile)
-	print("Rows processed: %s" % format(rows_total, ","))
-	print("Records written: %s" % format(len(list(open(outfile)) if not USE_GZIP else [] , ",")))	# best effort placeholder
-	print("Runtime: %.1f seconds" % (time.time() - start_time))
-	sys.exit(0)
-# ---------------------------
-# (END MySQL pivot branch)
-# ---------------------------
 
 # ---------------------------
 # Stream data rows and pivot per (record,event,instance)
