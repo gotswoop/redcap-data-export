@@ -277,10 +277,11 @@ except subprocess.CalledProcessError:
 # ---------------------------
 open_f = open
 if USE_GZIP:
-	# we will open gzip in binary then wrap text writes as needed
-	def open_f(path, mode="wt", newline=None):
-		# gzip.open in py3 accepts text mode "wt" with encoding; use default encoding
-		return gzip.open(path, mode)
+	def open_f(path, mode="w", newline=None):
+		# force text mode for gzip
+		if "b" not in mode:
+			mode = mode.replace("w", "wt")
+		return gzip.open(path, mode, encoding="utf-8")
 
 if OUT_FORMAT == "csv":
 	fout = open_f(outfile, "w", newline="")
