@@ -20,6 +20,8 @@ Options:
 	--labels raw|label		Export raw values or human-readable labels (default: raw)
 	--gzip					Compress output using gzip
 	--progress-interval N	Print progress every N records processed
+	--export-metadata		Export project metadata only (no data)
+	--metadata-format csv|xml	Metadata output format (default: csv)
 
 Examples:
 	./redcap_export.py 123
@@ -113,6 +115,8 @@ parser.add_argument("--format", choices=["csv", "xml"], default="csv", help="out
 parser.add_argument("--labels", choices=["raw", "label"], default="raw", help="export raw codes or labels")
 parser.add_argument("--gzip", action="store_true", help="gzip compress the output file")
 parser.add_argument("--progress-interval", type=int, default=2000, help="update progress every N rows processed")
+parser.add_argument("--export-metadata", action="store_true", help="export project metadata only")
+parser.add_argument("--metadata-format", choices=["csv","xml"], default="csv", help="metadata output format")
 args = parser.parse_args()
 
 pid = args.pid
@@ -129,6 +133,56 @@ start_time = time.time()
 
 print("\nREDCap Export Summary")
 print("----------------------")
+
+# ---------------------------
+# METADATA EXPORT ONLY
+# ---------------------------
+if args.export_metadata:
+	meta_query = """
+	SELECT field_name, form_name, IFNULL(element_type,''), REPLACE(REPLACE(IFNULL(element_enum,''),'\\n',' '),'\\r',' ')
+	FROM redcap_metadata
+	WHERE project_id=%d
+	ORDER BY field_order;
+	""" % pid
+
+	meta_raw = run_mysql(meta_query)
+
+	outfile_meta = "project_%d_metadata.%s" % (pid, "xml" if args.metadata_format == "xml" else "csv")
+
+	if args.metadata_format == "csv":
+		with open(outfile_meta, "w", newline="") as f:
+			writer = csv.writer(f)
+			writer.writerow(["field_name","form_name","element_type","element_enum"])
+			for line in meta_raw.splitlines():
+				writer.writerow(line.split("\t"))
+	else:
+		with open(outfile_meta, "w") as f:
+			f.write('<?xml version="1.0" encoding="UTF-8" ?>\n<project>\n')
+			current_form = None
+			for line in meta_raw.splitlines():
+				parts = line.split("\t")
+				if len(parts) < 4:
+					continue
+				field, form, etype, enum = parts
+				if form != current_form:
+					if current_form is not None:
+						f.write("\t</instrument>\n")
+					f.write("\t<instrument name=\"%s\">\n" % form)
+					current_form = form
+				f.write("\t\t<field name=\"%s\" type=\"%s\">\n" % (field, etype))
+				if enum:
+					for choice in enum.split("|"):
+						if "," in choice:
+							c,l = choice.split(",",1)
+							f.write("\t\t\t<choice code=\"%s\" label=\"%s\"/>\n" % (c.strip(), l.strip()))
+				f.write("\t\t</field>\n")
+			if current_form is not None:
+				f.write("\t</instrument>\n")
+			f.write("</project>\n")
+
+	print("Metadata export complete")
+	print("Output file:", outfile_meta)
+	sys.exit(0)
 
 # ---------------------------
 # Determine data table for project
