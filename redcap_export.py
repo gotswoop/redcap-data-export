@@ -336,7 +336,7 @@ def emit_current(key, row_map_local):
 	else:
 		# buffered xml writing: collect lines then write once
 		xml_lines = []
-		xml_lines.append("	<item>")
+		xml_lines.append("\t<item>")
 		# system cols
 		fields_to_write = [record_id_field, "redcap_event_name", "redcap_repeat_instrument", "redcap_repeat_instance", "redcap_data_access_group"] + expanded_fields
 		values = [record, event_name, repeat_name, inst, dag_label]
@@ -351,8 +351,8 @@ def emit_current(key, row_map_local):
 			# use CDATA for safe text; val must be string
 			if val is None:
 				val = ""
-			xml_lines.append("	<%s><![CDATA[%s]]></%s>" % (colname, str(val), colname))
-		xml_lines.append("	</item>\n")
+			xml_lines.append("\t<%s><![CDATA[%s]]></%s>" % (colname, str(val), colname))
+		xml_lines.append("\t</item>\n")
 		fout.write("\n".join(xml_lines))
 
 # Main loop
