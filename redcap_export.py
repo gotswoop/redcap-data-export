@@ -126,7 +126,7 @@ USE_GZIP = args.gzip
 PROGRESS_INTERVAL = max(1, args.progress_interval)
 
 label_mode_str = "raw_data" if LABEL_MODE == "raw" else "labeled_data"
-outfile_base = "project_%d_export_%s.%s" % (pid, label_mode_str, "xml" if OUT_FORMAT == "xml" else "csv")
+outfile_base = "project_%d_%s.%s" % (pid, label_mode_str, "xml" if OUT_FORMAT == "xml" else "csv")
 outfile = outfile_base + (".gz" if USE_GZIP else "")
 
 start_time = time.time()
